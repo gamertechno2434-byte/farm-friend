@@ -173,9 +173,17 @@ def tidy_ai(text):
 
 
 def ai_reply(system, user_text, image=None, max_tokens=450):
-    """One call to OpenAI or Gemini. Returns plain text, or "" without a key.
+    """One call to OpenAI or Gemini. Returns plain text, or "" without a key."""
+    try:
+        return _ai_reply(system, user_text, image, max_tokens)
+    except RuntimeError:
+        raise
+    except Exception as error:
+        raise RuntimeError(f"AI request failed: {type(error).__name__}: {error}")
 
-    New AI Studio keys start with "AQ." and are rejected by Gemini's
+
+def _ai_reply(system, user_text, image=None, max_tokens=450):
+    """New AI Studio keys start with "AQ." and are rejected by Gemini's
     OpenAI-compatible endpoint, so Gemini uses its native generateContent API.
     """
     key, model, provider = ai_settings()
