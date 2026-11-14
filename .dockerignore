@@ -1,0 +1,13 @@
+.env
+.git
+.gitignore
+__pycache__
+*.pyc
+results
+build
+shots
+.shots
+.chrome-*
+node_modules
+vibe_images
+*.zip
