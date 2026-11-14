@@ -38,7 +38,7 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -50,7 +50,7 @@ OPENAI_API = "https://api.openai.com/v1/chat/completions"
 PRODUCT = "MOD13Q1.061"
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1")
 GEMINI_API = "https://generativelanguage.googleapis.com/v1beta/models"
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 CROP_HEAT = {
     "Wheat": 32, "Tomato": 35, "Maize": 35, "Rice": 35, "Date palm": 45,
     "Cucumber": 34, "Vegetables": 34, "Potato": 28, "Cotton": 38, "Barley": 30,
@@ -264,6 +264,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/results", StaticFiles(directory=str(DATA_DIR)), name="results")
+
+
+@app.exception_handler(RuntimeError)
+def ai_error_handler(request, error):
+    return JSONResponse(status_code=502, content={"detail": str(error)})
 
 
 # ---------------------------------------------------------------- models
@@ -716,6 +721,7 @@ def health():
         ),
         "ai_on": bool(ai_settings()[0]),
         "ai_provider": ai_settings()[2],
+        "ai_model": ai_settings()[1],
         "layers": ["_250m_16_days_NDVI", "_250m_16_days_EVI"],
         "product": PRODUCT,
     }

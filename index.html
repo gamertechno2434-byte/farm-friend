@@ -753,7 +753,7 @@ dialog::backdrop{background:rgba(12,24,15,.55);backdrop-filter:blur(3px)}
             <li>❓ Not sure? Take a leaf to your local agriculture officer.</li>
           </ul>
         </details>
-        <p class="fine" style="margin-top:10px">The photo is sent to your own backend (and then to OpenAI) only when you press Ask. It is not stored by this page.</p>
+        <p class="fine" style="margin-top:10px">The photo is sent to your own backend (and then to the AI service) only when you press Ask. It is not stored by this page.</p>
       </div>
     </div>
   </section>
@@ -878,7 +878,7 @@ dialog::backdrop{background:rgba(12,24,15,.55);backdrop-filter:blur(3px)}
           <div class="arch">
             <div class="arch-row"><span class="node"><b>This page</b><span>one HTML file · fields · voice · alerts</span></span><span class="arrow">→</span><span class="node"><b>Backend</b><span>Node.js or Python · keys hidden</span></span><span class="arrow">→</span><span class="node"><b>NASA AppEEARS</b><span>MOD13Q1.061 · NDVI + EVI</span></span></div>
             <div class="arch-row"><span class="node"><b>This page</b><span>weather card · place search</span></span><span class="arrow">→</span><span class="node"><b>Open-Meteo</b><span>forecast + geocoding · no key</span></span></div>
-            <div class="arch-row"><span class="node"><b>Backend</b><span>question or photo</span></span><span class="arrow">→</span><span class="node"><b>OpenAI</b><span>plain words · never doses</span></span></div>
+            <div class="arch-row"><span class="node"><b>Backend</b><span>question or photo</span></span><span class="arrow">→</span><span class="node"><b>Gemini</b><span>plain words · never doses</span></span></div>
           </div>
           <p style="margin-top:10px">Weather and place search go straight from the browser. NASA and AI go through the backend so passwords and API keys never sit in the page. The two backends implement the same JSON API, so either can be swapped in.</p>
         </div>
@@ -889,7 +889,7 @@ dialog::backdrop{background:rgba(12,24,15,.55);backdrop-filter:blur(3px)}
           <table class="dtable">
             <tr><td>Weather</td><td>Open-Meteo (built on national models such as ECMWF and GFS). Current conditions plus 7 days. Reliable for the next day, reasonable to 3 days, trend only at 7. Our page refreshes every 15 minutes.</td></tr>
             <tr><td>Satellite</td><td>NASA MODIS/Terra, product MOD13Q1.061, layers <code>_250m_16_days_NDVI</code> and <code>_250m_16_days_EVI</code>, 250 m, 16-day composite. NASA processing usually takes 5–30 minutes. New data every 16 days, so it is a monthly check, not live.</td></tr>
-            <tr><td>AI</td><td>OpenAI GPT-4.1-mini, constrained to short, simple sentences. It is told to separate what it sees from what it guesses, never to name a disease from NDVI alone, and never to give chemical doses.</td></tr>
+            <tr><td>AI</td><td>Google Gemini (default) or OpenAI GPT-4.1, constrained to short, simple sentences. It is told to separate what it sees from what it guesses, never to name a disease from NDVI alone, and never to give chemical doses.</td></tr>
             <tr><td>Places</td><td>Open-Meteo geocoding, or the phone's own GPS. No account needed.</td></tr>
           </table>
         </div>
@@ -913,7 +913,7 @@ dialog::backdrop{background:rgba(12,24,15,.55);backdrop-filter:blur(3px)}
           <ul>
             <li>Accounts and fields are stored in this browser only. There is no central user database.</li>
             <li>NASA credentials go to your own backend and are not saved in the page. They are cleared from the form after sending.</li>
-            <li>Plant photos go to your backend and OpenAI only when you press Ask.</li>
+            <li>Plant photos go to your backend and the AI service only when you press Ask.</li>
             <li>Weather and the last saved forecast stay on the device. Without signal, the app shows the last forecast and the offline plant checklist.</li>
             <li>The whole interface is one HTML file. Text, colours and tips can be edited in any text editor. The photo block is a generated data block at the top; leave it intact.</li>
           </ul>
@@ -950,7 +950,7 @@ dialog::backdrop{background:rgba(12,24,15,.55);backdrop-filter:blur(3px)}
       <details>
         <summary>Is the information correct? Where does it come from?</summary>
         <div class="body">
-          <p>Weather: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>. Satellite: <a href="https://appeears.earthdatacloud.nasa.gov/" target="_blank" rel="noopener">NASA AppEEARS</a> using <a href="https://lpdaac.usgs.gov/products/mod13q1v061/" target="_blank" rel="noopener">MOD13Q1 v061</a> layers <code>_250m_16_days_NDVI</code> and <code>_250m_16_days_EVI</code>. Place search: Open-Meteo. AI: <a href="https://openai.com/" target="_blank" rel="noopener">OpenAI</a>. Satellite login: <a href="https://urs.earthdata.nasa.gov/" target="_blank" rel="noopener">NASA Earthdata</a>.</p>
+          <p>Weather: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>. Satellite: <a href="https://appeears.earthdatacloud.nasa.gov/" target="_blank" rel="noopener">NASA AppEEARS</a> using <a href="https://lpdaac.usgs.gov/products/mod13q1v061/" target="_blank" rel="noopener">MOD13Q1 v061</a> layers <code>_250m_16_days_NDVI</code> and <code>_250m_16_days_EVI</code>. Place search: Open-Meteo. AI: <a href="https://ai.google.dev/gemini-api/docs" target="_blank" rel="noopener">Google Gemini</a>. Satellite login: <a href="https://urs.earthdata.nasa.gov/" target="_blank" rel="noopener">NASA Earthdata</a>.</p>
           <p>All of it is an estimate. The app separates what is measured from what is guessed, and tells you when it is unsure.</p>
         </div>
       </details>
@@ -978,7 +978,7 @@ dialog::backdrop{background:rgba(12,24,15,.55);backdrop-filter:blur(3px)}
         <li>MODIS/Terra greenness via <a href="https://appeears.earthdatacloud.nasa.gov/" target="_blank" rel="noopener">NASA AppEEARS</a> (MOD13Q1.061)</li>
         <li><a href="https://lpdaac.usgs.gov/products/mod13q1v061/" target="_blank" rel="noopener">MOD13Q1 v061 product page</a></li>
         <li>Free login at <a href="https://urs.earthdata.nasa.gov/" target="_blank" rel="noopener">NASA Earthdata</a></li>
-        <li>Plain-language AI from <a href="https://openai.com/" target="_blank" rel="noopener">OpenAI</a></li>
+        <li>Plain-language AI from <a href="https://ai.google.dev/gemini-api/docs" target="_blank" rel="noopener">Google Gemini</a></li>
       </ul>
     </div>
     <div class="foot-bottom">
@@ -1577,9 +1577,15 @@ function wxSummary(){
 }
 function showAsk(mode,text){
   const box=$("#askAns");
-  $("#askTag").textContent=mode==="ai"?"AI answer":mode==="basic"?"Basic answer · no AI needed":"Thinking…";
+  $("#askTag").textContent=mode==="ai"?"AI answer":mode==="basic"?"Basic answer · no AI needed":mode==="error"?"AI unavailable":"Thinking…";
   $("#askText").textContent=text;
-  $("#askFine").textContent=mode==="ai"?"Written by AI from this field's weather and satellite numbers. It may be wrong. Check the field.":"Made from the weather and satellite numbers already on this page. Turn on AI for a written answer.";
+  $("#askFine").textContent=mode==="ai"
+    ?"Written by AI from this field's weather and satellite numbers. It may be wrong. Check the field."
+    :mode==="basic"
+      ?"Made from the weather and satellite numbers already on this page. Turn on AI for a written answer."
+      :mode==="error"
+        ?"The AI service did not reply. This is a server problem, not a farm problem. Try again in a minute."
+        :"Sending your question and this field's numbers to the AI…";
   box.hidden=false;
   box.scrollIntoView({behavior:"smooth",block:"nearest"});
 }
@@ -1628,7 +1634,13 @@ async function askQuestion(){
     if(r.mode==="off"||!r.answer)throw new Error("ai off");
     showAsk("ai",r.answer);
   }catch(e){
-    showAsk("basic",basicAnswer(q));
+    const m=String(e&&e.message||"");
+    if(m==="ai off"||m==="offline"||!BACKEND_OK){
+      showAsk("basic",basicAnswer(q));
+    }else{
+      console.error("Ask failed:",m);
+      showAsk("error","The AI could not answer this time. Please try again. If it keeps happening, the server's AI key or model needs checking.");
+    }
   }
 }
 
