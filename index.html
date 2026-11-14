@@ -280,6 +280,31 @@ details[open]>summary::before{content:"–"}
 .general li{font-size:.9rem;color:var(--ink-2);padding-left:20px;position:relative}
 .general li::before{content:"→";position:absolute;left:0;color:var(--leaf);font-weight:700}
 
+/* ---------- game ---------- */
+.game-card{margin-top:16px}
+.game-top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.game-score{font-size:.82rem;color:var(--mute)}
+.game-score b{color:var(--ink);font-size:.95rem;font-variant-numeric:tabular-nums}
+.game-bar{height:8px;border-radius:99px;background:var(--paper-2);margin:14px 0 18px;overflow:hidden}
+.game-bar i{display:block;height:100%;width:0;background:var(--leaf);border-radius:99px;transition:width .3s ease}
+.game-q{font-size:clamp(1.15rem,2vw,1.4rem);line-height:1.3;margin-bottom:14px;text-wrap:balance}
+.game-answers{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.game-ans{display:flex;align-items:flex-start;gap:10px;text-align:left;min-height:56px;padding:12px 14px;
+  border:1px solid var(--line-2);border-radius:10px;background:var(--card);font-size:.94rem;font-weight:500;line-height:1.35;
+  transition:background .15s,border-color .15s}
+.game-ans:hover:not(:disabled){background:var(--paper-2)}
+.game-ans:disabled{cursor:default;opacity:1}
+.game-num{flex:none;width:24px;height:24px;border-radius:50%;background:var(--paper-2);display:grid;place-items:center;
+  font-size:.78rem;font-weight:700;color:var(--mute);margin-top:-1px}
+.game-ans.ok{background:var(--green-2);border-color:var(--green);color:var(--green);font-weight:700}
+.game-ans.ok .game-num{background:var(--green);color:#fff}
+.game-ans.no{background:var(--red-2);border-color:var(--red);color:var(--red);font-weight:700}
+.game-ans.no .game-num{background:var(--red);color:#fff}
+.game-fb{min-height:3.2em;margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--paper-2);
+  font-size:.9rem;color:var(--ink-2)}
+.game-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.game-acts .btn[hidden]{display:none}
+
 /* ---------- fields ---------- */
 .farm-list{display:grid;grid-template-columns:minmax(0,1fr);gap:9px}
 .farm-row{display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
@@ -414,6 +439,7 @@ dialog::backdrop{background:rgba(12,24,15,.55);backdrop-filter:blur(3px)}
   .sat-grid{grid-template-columns:1fr}
   .sat-photo{min-height:260px}
   .tips-grid{grid-template-columns:1fr}
+  .game-answers{grid-template-columns:1fr}
   .rot{min-height:230px}
   .guide{grid-template-columns:1fr}
   .guide-photo{min-height:250px;order:2}
@@ -784,10 +810,35 @@ dialog::backdrop{background:rgba(12,24,15,.55);backdrop-filter:blur(3px)}
     </div>
   </section>
 
+  <section class="block" id="game">
+    <div class="block-head">
+      <div>
+        <div class="block-kicker"><span class="num">07</span><span class="eyebrow">Play and learn</span></div>
+        <h2>Field challenge</h2>
+        <p>Eight quick farm decisions. No timer and no login. Nothing is sent anywhere, and every answer explains itself, so a wrong guess still teaches something.</p>
+      </div>
+      <button type="button" class="btn small" id="bGameListen" aria-pressed="false">🔊 Listen</button>
+    </div>
+    <div class="card game-card">
+      <div class="game-top">
+        <span class="pill quiet" id="gameStep">Ready</span>
+        <span class="game-score">Score <b id="gameScore">0</b> / 8 · Best on this device <b id="gameBest">0</b></span>
+      </div>
+      <div class="game-bar" aria-hidden="true"><i id="gameBar"></i></div>
+      <h3 class="game-q" id="gameQ">Ready to play?</h3>
+      <div class="game-answers" id="gameAnswers"></div>
+      <p class="game-fb" id="gameFb" role="status" aria-live="polite">Press Start. Each answer tells you why.</p>
+      <div class="game-acts">
+        <button type="button" class="btn primary" id="bGameStart">Start the game</button>
+        <button type="button" class="btn small" id="bGameNext" hidden>Next question</button>
+      </div>
+    </div>
+  </section>
+
   <section class="block" id="fields">
     <div class="block-head">
       <div>
-        <div class="block-kicker"><span class="num">07</span><span class="eyebrow">Your fields</span></div>
+        <div class="block-kicker"><span class="num">08</span><span class="eyebrow">Your fields</span></div>
         <h2>One farm, many fields</h2>
         <p>Each field has its own crop, weather and satellite reading. Add as many as you like. Everything is saved on this device.</p>
       </div>
@@ -803,7 +854,7 @@ dialog::backdrop{background:rgba(12,24,15,.55);backdrop-filter:blur(3px)}
   <section class="block" id="guide">
     <div class="block-head">
       <div>
-        <div class="block-kicker"><span class="num">08</span><span class="eyebrow">How to use it</span></div>
+        <div class="block-kicker"><span class="num">09</span><span class="eyebrow">How to use it</span></div>
         <h2>Five minutes, every morning</h2>
         <p>No reading needed for the main message: press the speaker and listen. Colour and shape tell you the urgency.</p>
       </div>
@@ -925,7 +976,7 @@ dialog::backdrop{background:rgba(12,24,15,.55);backdrop-filter:blur(3px)}
   <section class="block" id="faq">
     <div class="block-head">
       <div>
-        <div class="block-kicker"><span class="num">09</span><span class="eyebrow">Straight answers</span></div>
+        <div class="block-kicker"><span class="num">10</span><span class="eyebrow">Straight answers</span></div>
         <h2>Questions people ask</h2>
         <p>The practical ones: timing, accuracy, sources, other software, and whether you can change this page.</p>
       </div>
@@ -1216,6 +1267,7 @@ function renderHeader(){
   if(P.size)bits.push(P.size+" ha");
   if(W_AT)bits.push("updated "+fmtTime(W_AT));
   $("#farmMeta").innerHTML=bits.map((b,i)=>`<span>${esc(b)}</span>`).join("");
+  const gb=$("#gameBest");if(gb)gb.textContent=gameBest();
   $("#todayLine").textContent=new Date().toLocaleDateString([], {weekday:"long",day:"numeric",month:"long"});
   $("#farmSelect").innerHTML=farms.map((f,i)=>`<option value="${i}" ${i===ci?"selected":""}>${esc(f.name)} · ${esc(f.crop)}</option>`).join("");
   $("#bAuth").textContent=U?"👤 "+U.name:"Sign in";
@@ -1242,6 +1294,136 @@ function renderTips(){
   $("#tipsList").innerHTML=c.tips.map(t=>`<li>${esc(t)}</li>`).join("");
   $("#rotText").textContent=c.rot;
   $("#rotGen").innerHTML=GENERAL.map(t=>`<li>${esc(t)}</li>`).join("");
+}
+
+/* ---------------- game ---------------- */
+const GAME_Q=[
+  {q:"Rain is forecast and the soil is already wet. What is the best move today?",
+   right:"Wait, then check the soil after the rain.",
+   options:["Wait, then check the soil after the rain.","Water a little more, just in case.","Spray the crop before the rain.","Dig around the roots to dry the soil."],
+   why:"Wet soil plus more rain can drown roots, and rain washes spray away. Waiting costs nothing."},
+  {q:"Your last two satellite greenness readings are 0.52 and 0.54. What does that mean?",
+   right:"Holding steady. A change under 0.05 is only noise.",
+   options:["Holding steady. A change under 0.05 is only noise.","The crop is dying fast.","The crop is three times healthier.","The satellite is broken."],
+   why:"Small moves are normal. This app only calls a trend when the change is 0.05 or more."},
+  {q:"When is the best time to water on a hot day?",
+   right:"Early morning or evening, at the roots.",
+   options:["Early morning or evening, at the roots.","At noon, so the leaves dry quickly.","Only at night, over the leaves.","Any time, as long as it is a lot of water."],
+   why:"Cooler hours lose less water to evaporation, and wet leaves at night can invite disease."},
+  {q:"A hard frost is forecast tonight. Which crop is most at risk?",
+   right:"Tomato",
+   options:["Tomato","Wheat","Barley","Date palm"],
+   why:"Tomato comes from warm country and frost damages it easily. Wheat and barley handle cold far better."},
+  {q:"You see a few insects under the leaves of one plant. What is the safest first step?",
+   right:"Count them and check the nearby plants first.",
+   options:["Count them and check the nearby plants first.","Spray the whole field at once.","Pull out every plant in the row.","Ignore it until harvest."],
+   why:"A few insects may be harmless. Look first, then ask your agriculture officer before spraying."},
+  {q:"Strong wind is forecast this afternoon. What should you postpone?",
+   right:"Spraying.",
+   options:["Spraying.","Harvesting.","Weeding.","Walking the field."],
+   why:"Wind carries spray onto other plants, water and people. Spray on a calm day."},
+  {q:"What does the EVI number add to NDVI?",
+   right:"It helps in dense, leafy fields where NDVI stops changing.",
+   options:["It helps in dense, leafy fields where NDVI stops changing.","It measures the soil temperature.","It replaces the weather forecast.","It counts the plants in the field."],
+   why:"Both measure greenness. EVI keeps working when the crop is thick and NDVI levels off."},
+  {q:"Leaves turn yellow all over the field. What is a safe conclusion?",
+   right:"Yellow leaves can have many causes, so check soil, water and pests.",
+   options:["Yellow leaves can have many causes, so check soil, water and pests.","It is definitely a disease.","It needs more spray right now.","It is definitely old age."],
+   why:"Too much water, too little water, poor soil and pests can all look the same. Check before acting."}
+];
+let GAME=null,GAME_VOICE=false;
+const gameBestKey=()=>"ff_game_best_"+me();
+const gameBest=()=>Number(load(gameBestKey(),0))||0;
+function gameShuffle(a){
+  const x=a.slice();
+  for(let i=x.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[x[i],x[j]]=[x[j],x[i]]}
+  return x;
+}
+function gameSpeakQuestion(){
+  if(!GAME||!GAME_VOICE)return;
+  const q=GAME.list[GAME.i];
+  speak(q.q+". "+GAME.opts.map((o,n)=>`${n+1}. ${o}`).join(". "));
+}
+function startGame(){
+  GAME={list:gameShuffle(GAME_Q),i:0,score:0,locked:false,opts:[]};
+  $("#bGameStart").hidden=true;
+  $("#gameScore").textContent="0";
+  $("#gameBest").textContent=gameBest();
+  gameQuestion();
+}
+function gameQuestion(){
+  const g=GAME;if(!g)return;
+  const q=g.list[g.i];
+  g.opts=gameShuffle(q.options);
+  g.locked=false;
+  $("#gameStep").textContent=`Question ${g.i+1} of ${g.list.length}`;
+  $("#gameBar").style.width=(g.i/g.list.length*100)+"%";
+  $("#gameQ").textContent=q.q;
+  $("#gameFb").textContent="Tap one answer. Read all four first — there is no rush.";
+  const box=$("#gameAnswers");box.innerHTML="";
+  g.opts.forEach((opt,k)=>{
+    const b=document.createElement("button");
+    b.type="button";b.className="game-ans";
+    const n=document.createElement("span");n.className="game-num";n.textContent=String(k+1);
+    const t=document.createElement("span");t.textContent=opt;
+    b.append(n,t);
+    b.addEventListener("click",()=>gameAnswer(k,b));
+    box.appendChild(b);
+  });
+  $("#bGameNext").hidden=true;
+  gameSpeakQuestion();
+}
+function gameAnswer(k,btn){
+  const g=GAME;if(!g||g.locked)return;
+  g.locked=true;
+  const q=g.list[g.i];
+  const right=g.opts[k]===q.right;
+  [...$("#gameAnswers").children].forEach((b,n)=>{
+    b.disabled=true;
+    if(g.opts[n]===q.right)b.classList.add("ok");
+  });
+  if(!right)btn.classList.add("no");
+  if(right)g.score++;
+  $("#gameScore").textContent=g.score;
+  const best=gameBest();
+  if(g.score>best)save(gameBestKey(),g.score);
+  $("#gameBest").textContent=Math.max(best,g.score);
+  const head=right?"Correct.":"Not quite.";
+  $("#gameFb").textContent=`${head} ${q.why}`;
+  $("#gameBar").style.width=((g.i+1)/g.list.length*100)+"%";
+  $("#bGameNext").textContent=g.i+1<g.list.length?"Next question":"See my score";
+  $("#bGameNext").hidden=false;
+  if(GAME_VOICE)speak(`${head} ${q.why}`);
+}
+function gameNext(){
+  const g=GAME;if(!g)return;
+  if(g.i+1<g.list.length){g.i++;gameQuestion();return}
+  const total=g.list.length,best=Math.max(gameBest(),g.score);
+  save(gameBestKey(),best);
+  $("#gameStep").textContent="Finished";
+  $("#gameScore").textContent=g.score;
+  $("#gameBest").textContent=best;
+  $("#gameBar").style.width="100%";
+  $("#gameQ").textContent=g.score===total?"Perfect field work.":g.score>=total-2?"Good judgement.":"Worth another try.";
+  $("#gameAnswers").innerHTML="";
+  $("#gameFb").textContent=`You got ${g.score} of ${total}. Best on this device: ${best}. ${g.score<total?"Read the reasons above for the ones you missed, then play again.":"Nothing missed. Play again for a different question order."}`;
+  $("#bGameNext").hidden=true;
+  $("#bGameStart").hidden=false;
+  $("#bGameStart").textContent="Play again";
+  if(GAME_VOICE)speak(`You got ${g.score} of ${total}.`);
+  GAME=null;
+}
+function gameListen(){
+  GAME_VOICE=!GAME_VOICE;
+  const b=$("#bGameListen");
+  b.textContent=GAME_VOICE?"🔇 Stop voice":"🔊 Listen";
+  b.setAttribute("aria-pressed",GAME_VOICE?"true":"false");
+  if(!GAME_VOICE){
+    if("speechSynthesis" in window)speechSynthesis.cancel();
+    return;
+  }
+  if(GAME)gameSpeakQuestion();
+  else speak("Field challenge. Press Start the game, then tap one answer for each question.");
 }
 
 /* ---------------- weather ---------------- */
@@ -1940,6 +2122,9 @@ function boot(){
   $("#tsPlus").onclick=()=>changeTextSize(1);
   $("#bListen").onclick=listenToday;
   $("#bSpeakTips").onclick=()=>{const c=CROPS[P.crop]||CROPS.Vegetables;speak(c.tips.slice(0,3).join(" ")+" "+c.rot)};
+  $("#bGameStart").onclick=startGame;
+  $("#bGameNext").onclick=gameNext;
+  $("#bGameListen").onclick=gameListen;
   $("#bSpeakNotes").onclick=()=>speak($("#aiText").textContent);
   $("#bSpeakAsk").onclick=()=>speak($("#askText").textContent);
   $("#bSpeakPhoto").onclick=()=>speak($("#pA").textContent);
