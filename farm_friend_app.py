@@ -49,7 +49,7 @@ WEATHER_API = "https://api.open-meteo.com/v1/forecast"
 OPENAI_API = "https://api.openai.com/v1/chat/completions"
 PRODUCT = "MOD13Q1.061"
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1")
-GEMINI_API = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+GEMINI_API = "https://generativelanguage.googleapis.com/v1beta/models"
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 CROP_HEAT = {
     "Wheat": 32, "Tomato": 35, "Maize": 35, "Rice": 35, "Date palm": 45,
@@ -65,19 +65,19 @@ def ai_settings():
     """OpenAI by default; a free Google AI Studio key can be used instead."""
     openai_key = os.getenv("OPENAI_API_KEY", "").strip()
     gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
-    key = openai_key or gemini_key
-    if not key:
-        return None, None, None
-    base = os.getenv("OPENAI_BASE_URL", "").strip().rstrip("/")
-    if base:
-        endpoint = base + "/chat/completions"
-    else:
-        endpoint = OPENAI_API if openai_key else GEMINI_API
     if openai_key:
-        model = os.getenv("OPENAI_MODEL", "").strip() or OPENAI_MODEL
-    else:
-        model = os.getenv("GEMINI_MODEL", "").strip() or GEMINI_MODEL
-    return key, endpoint, model
+        return (
+            openai_key,
+            os.getenv("OPENAI_MODEL", "").strip() or OPENAI_MODEL,
+            "openai",
+        )
+    if gemini_key:
+        return (
+            gemini_key,
+            os.getenv("GEMINI_MODEL", "").strip() or GEMINI_MODEL,
+            "gemini",
+        )
+    return None, None, None
 
 
 def _num(value):
@@ -170,6 +170,82 @@ def tidy_ai(text):
     text = re.sub(r"(?m)^\s*#{1,6}\s*", "", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text[:1600]
+
+
+def ai_reply(system, user_text, image=None, max_tokens=450):
+    """One call to OpenAI or Gemini. Returns plain text, or "" without a key.
+
+    New AI Studio keys start with "AQ." and are rejected by Gemini's
+    OpenAI-compatible endpoint, so Gemini uses its native generateContent API.
+    """
+    key, model, provider = ai_settings()
+    if not key:
+        return ""
+    if provider == "gemini":
+        parts = [{"text": user_text}]
+        if image:
+            header, data = image.split(",", 1)
+            parts.append({
+                "inline_data": {
+                    "mime_type": header.split(";")[0].replace("data:", ""),
+                    "data": data,
+                }
+            })
+        r = requests.post(
+            f"{GEMINI_API}/{model}:generateContent",
+            timeout=90,
+            headers={"x-goog-api-key": key, "Content-Type": "application/json"},
+            json={
+                "systemInstruction": {"parts": [{"text": system}]},
+                "contents": [{"role": "user", "parts": parts}],
+                "generationConfig": {
+                    "temperature": 0.2,
+                    "maxOutputTokens": max_tokens,
+                },
+            },
+        )
+        if not r.ok:
+            try:
+                detail = r.json()["error"]["message"]
+            except (KeyError, TypeError, ValueError):
+                detail = r.text[:300]
+            raise RuntimeError(f"Gemini error {r.status_code}: {detail}")
+        try:
+            text = "".join(
+                part.get("text", "")
+                for part in r.json()["candidates"][0]["content"]["parts"]
+            )
+        except (KeyError, IndexError, TypeError):
+            text = ""
+    else:
+        base = os.getenv("OPENAI_BASE_URL", "").strip().rstrip("/")
+        content = user_text
+        if image:
+            content = [
+                {"type": "text", "text": user_text},
+                {"type": "image_url", "image_url": {"url": image}},
+            ]
+        r = requests.post(
+            (base + "/chat/completions") if base else OPENAI_API,
+            timeout=90,
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            json={
+                "model": model,
+                "temperature": 0.2,
+                "max_tokens": max_tokens,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": content},
+                ],
+            },
+        )
+        if not r.ok:
+            raise RuntimeError(f"OpenAI error {r.status_code}: {r.text[:300]}")
+        try:
+            text = r.json()["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError):
+            text = ""
+    return tidy_ai(text) if text else ""
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -478,8 +554,7 @@ Rules:
 
 
 def generate_advice(farm, data, weather):
-    key, endpoint, model = ai_settings()
-    if not key:
+    if not ai_settings()[0]:
         return {
             "mode": "basic",
             "advice": "AI advice is off. Add OPENAI_API_KEY or a free GEMINI_API_KEY to the .env file to turn it on.",
@@ -507,25 +582,7 @@ def generate_advice(farm, data, weather):
         "weather": summarize_weather(weather, farm.crop),
         "scale_help": "NDVI and EVI run about -1 to 1. Rough guide: 0.2 bare soil, 0.4 sparse, 0.6 healthy, 0.8 dense. A change under 0.05 is noise.",
     }
-    r = requests.post(
-        endpoint,
-        timeout=90,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json={
-            "model": model,
-            "temperature": 0.2,
-            "max_tokens": 450,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": str(context)},
-            ],
-        },
-    )
-    r.raise_for_status()
-    try:
-        text = tidy_ai(r.json()["choices"][0]["message"]["content"])
-    except (KeyError, IndexError, TypeError):
-        text = ""
+    text = ai_reply(SYSTEM_PROMPT, str(context), max_tokens=450)
     if not text:
         raise RuntimeError("The AI returned an empty answer.")
     return {"mode": "ai", "advice": text}
@@ -657,7 +714,8 @@ def health():
         "nasa_login_in_env": bool(
             os.getenv("EARTHDATA_USERNAME") and os.getenv("EARTHDATA_PASSWORD")
         ),
-        "ai_on": bool(os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY")),
+        "ai_on": bool(ai_settings()[0]),
+        "ai_provider": ai_settings()[2],
         "layers": ["_250m_16_days_NDVI", "_250m_16_days_EVI"],
         "product": PRODUCT,
     }
@@ -728,8 +786,7 @@ def results(job_id: str):
 @app.post("/api/photo")
 def photo_check(body: PhotoRequest):
     """AI looks at one plant photo and writes simple advice. Needs an AI key."""
-    key, endpoint, model = ai_settings()
-    if not key:
+    if not ai_settings()[0]:
         return {
             "mode": "off",
             "advice": "The photo check is switched off on this server. Add OPENAI_API_KEY or a free GEMINI_API_KEY to the .env file, restart, and try again. You can still use the self-check list in the app.",
@@ -741,31 +798,7 @@ def photo_check(body: PhotoRequest):
     context = f"Crop: {body.crop or 'unknown'}. Growth stage: {body.stage or 'unknown'}."
     if body.question:
         context += f"\nFarmer asks: {body.question}"
-    r = requests.post(
-        endpoint,
-        timeout=90,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json={
-            "model": model,
-            "temperature": 0.2,
-            "max_tokens": 450,
-            "messages": [
-                {"role": "system", "content": PHOTO_PROMPT},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": context},
-                        {"type": "image_url", "image_url": {"url": body.image}},
-                    ],
-                },
-            ],
-        },
-    )
-    r.raise_for_status()
-    try:
-        text = tidy_ai(r.json()["choices"][0]["message"]["content"])
-    except (KeyError, IndexError, TypeError):
-        text = ""
+    text = ai_reply(PHOTO_PROMPT, context, image=body.image, max_tokens=450)
     if not text:
         raise RuntimeError("The AI returned an empty answer for the photo.")
     return {"mode": "ai", "advice": text}
@@ -774,8 +807,7 @@ def photo_check(body: PhotoRequest):
 @app.post("/api/chat")
 def chat(body: ChatRequest):
     """Plain-language answer to a farmer's question. Needs an AI key."""
-    key, endpoint, model = ai_settings()
-    if not key:
+    if not ai_settings()[0]:
         return {
             "mode": "off",
             "answer": "AI answers are switched off on this server. Add OPENAI_API_KEY or a free GEMINI_API_KEY to the .env file and restart. The app will still give a basic answer from the weather and satellite numbers.",
@@ -792,25 +824,7 @@ def chat(body: ChatRequest):
         "satellite": body.satellite,
         "units": "temperature in C, rain in mm, wind in km/h, ET0 in mm/day. NDVI/EVI run about -1 to 1; a change under 0.05 is noise.",
     }
-    r = requests.post(
-        endpoint,
-        timeout=90,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json={
-            "model": model,
-            "temperature": 0.2,
-            "max_tokens": 350,
-            "messages": [
-                {"role": "system", "content": CHAT_PROMPT},
-                {"role": "user", "content": str(context)},
-            ],
-        },
-    )
-    r.raise_for_status()
-    try:
-        text = tidy_ai(r.json()["choices"][0]["message"]["content"])
-    except (KeyError, IndexError, TypeError):
-        text = ""
+    text = ai_reply(CHAT_PROMPT, str(context), max_tokens=350)
     if not text:
         raise RuntimeError("The AI returned an empty answer.")
     return {"mode": "ai", "answer": text}
