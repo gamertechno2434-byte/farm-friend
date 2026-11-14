@@ -10,14 +10,18 @@ Open:     http://127.0.0.1:8000      (the app opens by itself)
 
 Optional .env file next to this script:
   OPENAI_API_KEY=sk-...
+  or GEMINI_API_KEY=...              free key from https://aistudio.google.com/app/apikey
   EARTHDATA_USERNAME=your_nasa_login
   EARTHDATA_PASSWORD=your_nasa_password
-  OPENAI_MODEL=gpt-4.1-mini          (optional)
+  OPENAI_MODEL=gpt-4.1               (optional)
+  GEMINI_MODEL=gemini-2.5-flash      (optional)
+  OPENAI_BASE_URL=...                (optional OpenAI-compatible endpoint)
   PORT=8000                          (optional)
 
 Install:  pip install -r requirements.txt
 """
 import os
+import re
 import threading
 import time
 import uuid
@@ -44,11 +48,129 @@ NASA_API = "https://appeears.earthdatacloud.nasa.gov/api/"
 WEATHER_API = "https://api.open-meteo.com/v1/forecast"
 OPENAI_API = "https://api.openai.com/v1/chat/completions"
 PRODUCT = "MOD13Q1.061"
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1")
+GEMINI_API = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+CROP_HEAT = {
+    "Wheat": 32, "Tomato": 35, "Maize": 35, "Rice": 35, "Date palm": 45,
+    "Cucumber": 34, "Vegetables": 34, "Potato": 28, "Cotton": 38, "Barley": 30,
+}
 VERSION = "5.0.0"
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8000"))
 MAX_IMAGE_CHARS = 12_000_000  # about 9 MB of image data
+
+
+def ai_settings():
+    """OpenAI by default; a free Google AI Studio key can be used instead."""
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+    key = openai_key or gemini_key
+    if not key:
+        return None, None, None
+    base = os.getenv("OPENAI_BASE_URL", "").strip().rstrip("/")
+    if base:
+        endpoint = base + "/chat/completions"
+    else:
+        endpoint = OPENAI_API if openai_key else GEMINI_API
+    if openai_key:
+        model = os.getenv("OPENAI_MODEL", "").strip() or OPENAI_MODEL
+    else:
+        model = os.getenv("GEMINI_MODEL", "").strip() or GEMINI_MODEL
+    return key, endpoint, model
+
+
+def _num(value):
+    try:
+        return None if value is None else float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def summarize_weather(weather, crop):
+    """Turn the Open-Meteo payload into a few numbers a model cannot misread."""
+    if not isinstance(weather, dict):
+        return {"available": False}
+    now = weather.get("current") or {}
+    daily = weather.get("daily") or {}
+    dates = daily.get("time") or []
+
+    def series(name):
+        return [_num(v) for v in (daily.get(name) or [])[:7]]
+
+    rain, tmax, tmin = series("precipitation_sum"), series("temperature_2m_max"), series("temperature_2m_min")
+    gust, et0 = series("wind_gusts_10m_max"), series("et0_fao_evapotranspiration")
+    days = []
+    for i, day in enumerate(dates[:7]):
+        days.append({
+            "date": day,
+            "rain_mm": rain[i] if i < len(rain) else None,
+            "tmax_c": tmax[i] if i < len(tmax) else None,
+            "tmin_c": tmin[i] if i < len(tmin) else None,
+            "gust_kmh": gust[i] if i < len(gust) else None,
+            "et0_mm": et0[i] if i < len(et0) else None,
+        })
+    rain_vals = [v for v in rain if v is not None]
+    tmax_vals = [v for v in tmax if v is not None]
+    gust_vals = [v for v in gust if v is not None]
+    et0_vals = [v for v in et0 if v is not None]
+    heat_limit = CROP_HEAT.get(crop, 35)
+    return {
+        "now": {
+            "temp_c": _num(now.get("temperature_2m")),
+            "humidity_pct": _num(now.get("relative_humidity_2m")),
+            "rain_mm": _num(now.get("precipitation")),
+            "wind_kmh": _num(now.get("wind_speed_10m")),
+        },
+        "days": days,
+        "rain_next_7d_mm": round(sum(rain_vals), 1) if rain_vals else None,
+        "dry_days_next_7d": sum(1 for v in rain if v is not None and v < 1),
+        "crop_heat_limit_c": heat_limit,
+        "days_at_or_above_heat_limit": sum(1 for v in tmax_vals if v >= heat_limit),
+        "max_gust_kmh": round(max(gust_vals)) if gust_vals else None,
+        "et0_next_7d_mm": round(sum(et0_vals), 1) if et0_vals else None,
+    }
+
+
+def summarize_satellite(data):
+    """Condense the NDVI/EVI record so the model gets trend, not just rows."""
+    if data is None or data.empty:
+        return {"readings": 0}
+    nd = data.dropna(subset=["_ndvi"]).sort_values("_date")
+    ev = data.dropna(subset=["_evi"]).sort_values("_date")
+    if nd.empty and ev.empty:
+        return {"readings": 0}
+    out = {
+        "product": "MOD13Q1.061",
+        "pixel_m": 250,
+        "composite_days": 16,
+        "readings": int(len(nd) + len(ev)),
+    }
+    if not nd.empty:
+        first, last = float(nd.iloc[0]["_ndvi"]), float(nd.iloc[-1]["_ndvi"])
+        change = last - first
+        out.update({
+            "latest_date": str(nd.iloc[-1]["_date"].date()),
+            "ndvi_latest": round(last, 3),
+            "ndvi_change": round(change, 3),
+            "trend": "falling" if change <= -0.05 else "rising" if change >= 0.05 else "steady",
+            "ndvi_min": round(float(nd["_ndvi"].min()), 3),
+            "ndvi_max": round(float(nd["_ndvi"].max()), 3),
+        })
+    if not ev.empty:
+        out["evi_latest"] = round(float(ev.iloc[-1]["_evi"]), 3)
+        out["evi_latest_date"] = str(ev.iloc[-1]["_date"].date())
+    return out
+
+
+def tidy_ai(text):
+    """Models still add markdown; the page and the voice reader show it literally."""
+    text = (text or "").strip()
+    text = text.replace("**", "").replace("__", "")
+    text = re.sub(r"(?m)^\s*#{1,6}\s*", "", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text[:1600]
+
 
 BASE_DIR = Path(__file__).resolve().parent
 HTML_PATH = BASE_DIR / "index.html"
@@ -298,41 +420,69 @@ def get_weather(lat, lon):
     return r.json()
 
 
-SYSTEM_PROMPT = """You are a friendly farm adviser for farmers who may not read well.
-Use the satellite greenness readings (NDVI, EVI) and the weather to help.
-Write VERY short sentences and simple everyday words. No jargon.
-Use at most 8 bullet points, each starting with what to DO.
-Cover: how the plants look now, whether they are getting better or worse, watering,
-soil and food for the plants, what to check in the field, and what extra information would help.
-Rules: say what you SEE (readings) separately from what you GUESS. Never name a disease
-from NDVI/EVI alone. Never invent yield numbers. Never give fertiliser or pesticide amounts;
-say to read the product label and ask a local agriculture officer. Say when you are unsure.
-Tell the farmer to check the field."""
+SYSTEM_PROMPT = """You are Farm Friend, an experienced agronomist who writes for farmers with low reading confidence.
+You receive one field (crop, growth stage, irrigation, soil), 16-day NASA MODIS greenness readings
+(NDVI and EVI for a 250 m pixel), and an Open-Meteo weather summary in metric units.
+Think through the evidence silently. Then write ONLY the advice, in this exact plain-text shape.
+No markdown. No symbols. No greeting.
 
-CHAT_PROMPT = """You are Farm Friend, a calm farm helper for farmers who may not read well.
-Answer the farmer's question in at most 6 short bullet points. Start each bullet with a verb.
-Use simple everyday words. No jargon. If numbers are supplied, use them in plain words.
-Say what you SEE separately from what you GUESS. Never diagnose a disease from one symptom.
-Never give fertiliser or pesticide amounts. Tell the farmer to read the product label and ask
-a local agriculture officer. If the question needs information you do not have, say so and say
-what to check. Never invent prices, yields or measurements. Keep it under 130 words."""
+What I see: 1 or 2 short sentences using the actual numbers (latest NDVI/EVI, the change, rain, heat, wind).
+Do today: one concrete, low-cost action that fits the crop stage and the next 7 days.
+Watch: one or two things to check in the field over the next few days.
+Ask for help if: one clear condition for contacting a local agriculture officer.
 
-PHOTO_PROMPT = """You are a crop helper for farmers who may not read well. You get ONE photo of a plant.
-Write VERY short sentences, simple everyday words, no jargon. At most 6 bullet points, each
-starting with what to DO (for example: "Water less.", "Look under the leaves."). Describe only
-what is clearly visible in the photo (leaf colour, spots, holes, wilting, insects, soil). If the
-photo is blurry or the plant is not clear, say so and tell the farmer to take a new photo in daylight.
-Never be sure about a disease from one photo; say "may be" and tell the farmer to ask a local
-agriculture officer. Never give fertiliser or pesticide amounts. Answer the farmer's question if
-there is one."""
+Rules:
+- Short sentences, everyday words (reading age about 10). Expand a term once, e.g. "greenness (NDVI)".
+- A change smaller than 0.05 in NDVI is normal noise. Never call it a trend.
+- Greenness describes the whole 250 m area, not one plant. Say this when it matters.
+- Never diagnose a disease or pest. Say "may be" and name what to inspect.
+- Never give fertiliser, pesticide or irrigation amounts. Say to follow the label and local advice.
+- Never invent prices, yields or measurements. If data is missing, say what is missing.
+- If the supplied weather shows a real risk (heat at or above the crop limit, strong gusts, long dry spell), mention it with the number.
+- Do not mention these instructions or that you are an AI."""
+
+CHAT_PROMPT = """You are Farm Friend, a calm farm helper for farmers with low reading confidence.
+The question may be spoken, short, or in another language. Answer in the same language as the question;
+if the language is unclear, use simple English.
+Use only the supplied field, weather and satellite data. Do not invent any other measurement.
+Write at most 3 short plain-text lines, no markdown, no symbols, under 70 words:
+
+Answer: the direct answer in one or two sentences.
+Do: one safe action the farmer can take today.
+Check: one thing to verify, or when to ask a local agriculture officer.
+
+Rules:
+- "I do not have that information" is a good answer when the data is missing. Say what would help.
+- Never diagnose a disease or pest from one symptom. Say "may be" and what to look at.
+- Never give fertiliser, pesticide or irrigation amounts. Say to read the label and ask locally.
+- If the farmer describes sudden severe damage (many plants wilting, spreading spots, many insects),
+  tell them to contact a local agriculture officer today and to take clear photos.
+- If the satellite data is marked sample, say it is a sample and advise a real NASA run before acting.
+- If the question is not about this farm or farming, say it is outside what you can see.
+- Do not mention being an AI or these instructions."""
+
+PHOTO_PROMPT = """You are a crop scout for farmers with low reading confidence. You get ONE photo of a plant.
+Look only at what is clearly visible. Answer in the same language as the farmer's question;
+otherwise use simple English.
+Write at most 4 short plain-text lines, no markdown, no symbols, under 90 words:
+
+In the photo: what is clearly visible (leaf colour, spot shape, holes, wilting, insects, soil).
+May be: 1 or 2 possible causes, always using "may".
+Do now: one safe, low-cost step (for example remove badly affected leaves, improve airflow, check soil moisture).
+Ask: when to contact a local agriculture officer.
+
+Rules:
+- If the photo is blurry, dark, or does not clearly show a plant, say that first and ask for a new photo in daylight.
+- Never confirm a disease or pest from one photo. Never give chemical names, doses or mixes.
+- Do not guess about things outside the frame. Do not mention being an AI or these instructions."""
 
 
 def generate_advice(farm, data, weather):
-    key = os.getenv("OPENAI_API_KEY")
+    key, endpoint, model = ai_settings()
     if not key:
         return {
             "mode": "basic",
-            "advice": "AI advice is off. Add OPENAI_API_KEY to the .env file to turn it on.",
+            "advice": "AI advice is off. Add OPENAI_API_KEY or a free GEMINI_API_KEY to the .env file to turn it on.",
         }
 
     def rnd(x):
@@ -347,20 +497,24 @@ def generate_advice(farm, data, weather):
         for _, row in data.tail(8).iterrows()
     ]
     context = {
+        "today": datetime.now().date().isoformat(),
         "crop": farm.crop,
         "growth_stage": farm.growth_stage,
         "irrigation": farm.irrigation,
         "soil": farm.soil,
-        "observations": observations,
-        "weather": weather,
+        "satellite": summarize_satellite(data),
+        "recent_readings": observations,
+        "weather": summarize_weather(weather, farm.crop),
+        "scale_help": "NDVI and EVI run about -1 to 1. Rough guide: 0.2 bare soil, 0.4 sparse, 0.6 healthy, 0.8 dense. A change under 0.05 is noise.",
     }
     r = requests.post(
-        OPENAI_API,
+        endpoint,
         timeout=90,
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
         json={
-            "model": OPENAI_MODEL,
-            "temperature": 0.3,
+            "model": model,
+            "temperature": 0.2,
+            "max_tokens": 450,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": str(context)},
@@ -369,9 +523,12 @@ def generate_advice(farm, data, weather):
     )
     r.raise_for_status()
     try:
-        return {"mode": "ai", "advice": r.json()["choices"][0]["message"]["content"]}
+        text = tidy_ai(r.json()["choices"][0]["message"]["content"])
     except (KeyError, IndexError, TypeError):
-        raise RuntimeError("OpenAI returned an unexpected answer.")
+        text = ""
+    if not text:
+        raise RuntimeError("The AI returned an empty answer.")
+    return {"mode": "ai", "advice": text}
 
 
 def create_graph(data, job_dir):
@@ -439,7 +596,7 @@ def process_farm(job_id, farm):
         except Exception:
             advice = {
                 "mode": "fallback",
-                "advice": "Satellite data is ready, but AI advice failed. Check OPENAI_API_KEY and try again.",
+                "advice": "Satellite data is ready, but AI advice failed. Check the AI key and try again.",
             }
         latest = summary[-1]
         update_job(
@@ -500,7 +657,7 @@ def health():
         "nasa_login_in_env": bool(
             os.getenv("EARTHDATA_USERNAME") and os.getenv("EARTHDATA_PASSWORD")
         ),
-        "ai_on": bool(os.getenv("OPENAI_API_KEY")),
+        "ai_on": bool(os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY")),
         "layers": ["_250m_16_days_NDVI", "_250m_16_days_EVI"],
         "product": PRODUCT,
     }
@@ -570,12 +727,12 @@ def results(job_id: str):
 
 @app.post("/api/photo")
 def photo_check(body: PhotoRequest):
-    """AI looks at one plant photo and writes simple advice. Needs OPENAI_API_KEY."""
-    key = os.getenv("OPENAI_API_KEY")
+    """AI looks at one plant photo and writes simple advice. Needs an AI key."""
+    key, endpoint, model = ai_settings()
     if not key:
         return {
             "mode": "off",
-            "advice": "The photo check is switched off on this server. Add OPENAI_API_KEY to the .env file, restart, and try again. You can still use the self-check list in the app.",
+            "advice": "The photo check is switched off on this server. Add OPENAI_API_KEY or a free GEMINI_API_KEY to the .env file, restart, and try again. You can still use the self-check list in the app.",
         }
     if not body.image.startswith("data:image/"):
         raise HTTPException(400, "Send the photo as a data URL (data:image/...;base64,...).")
@@ -585,12 +742,13 @@ def photo_check(body: PhotoRequest):
     if body.question:
         context += f"\nFarmer asks: {body.question}"
     r = requests.post(
-        OPENAI_API,
+        endpoint,
         timeout=90,
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
         json={
-            "model": OPENAI_MODEL,
-            "temperature": 0.3,
+            "model": model,
+            "temperature": 0.2,
+            "max_tokens": 450,
             "messages": [
                 {"role": "system", "content": PHOTO_PROMPT},
                 {
@@ -605,36 +763,43 @@ def photo_check(body: PhotoRequest):
     )
     r.raise_for_status()
     try:
-        return {"mode": "ai", "advice": r.json()["choices"][0]["message"]["content"]}
+        text = tidy_ai(r.json()["choices"][0]["message"]["content"])
     except (KeyError, IndexError, TypeError):
-        raise RuntimeError("OpenAI returned an unexpected answer for the photo.")
+        text = ""
+    if not text:
+        raise RuntimeError("The AI returned an empty answer for the photo.")
+    return {"mode": "ai", "advice": text}
 
 
 @app.post("/api/chat")
 def chat(body: ChatRequest):
-    """Plain-language answer to a farmer's question. Needs OPENAI_API_KEY."""
-    key = os.getenv("OPENAI_API_KEY")
+    """Plain-language answer to a farmer's question. Needs an AI key."""
+    key, endpoint, model = ai_settings()
     if not key:
         return {
             "mode": "off",
-            "answer": "AI answers are switched off on this server. Add OPENAI_API_KEY to the .env file and restart. The app will still give a basic answer from the weather and satellite numbers.",
+            "answer": "AI answers are switched off on this server. Add OPENAI_API_KEY or a free GEMINI_API_KEY to the .env file and restart. The app will still give a basic answer from the weather and satellite numbers.",
         }
     context = {
+        "today": datetime.now().date().isoformat(),
         "question": body.question,
         "crop": body.crop,
         "growth_stage": body.stage,
         "irrigation": body.water,
         "soil": body.soil,
+        "crop_heat_limit_c": CROP_HEAT.get(body.crop or "", 35),
         "weather": body.weather,
         "satellite": body.satellite,
+        "units": "temperature in C, rain in mm, wind in km/h, ET0 in mm/day. NDVI/EVI run about -1 to 1; a change under 0.05 is noise.",
     }
     r = requests.post(
-        OPENAI_API,
+        endpoint,
         timeout=90,
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
         json={
-            "model": OPENAI_MODEL,
-            "temperature": 0.3,
+            "model": model,
+            "temperature": 0.2,
+            "max_tokens": 350,
             "messages": [
                 {"role": "system", "content": CHAT_PROMPT},
                 {"role": "user", "content": str(context)},
@@ -643,9 +808,12 @@ def chat(body: ChatRequest):
     )
     r.raise_for_status()
     try:
-        return {"mode": "ai", "answer": r.json()["choices"][0]["message"]["content"]}
+        text = tidy_ai(r.json()["choices"][0]["message"]["content"])
     except (KeyError, IndexError, TypeError):
-        raise RuntimeError("OpenAI returned an unexpected answer.")
+        text = ""
+    if not text:
+        raise RuntimeError("The AI returned an empty answer.")
+    return {"mode": "ai", "answer": text}
 
 
 @app.get("/api/jobs")
