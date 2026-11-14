@@ -199,19 +199,31 @@ def _ai_reply(system, user_text, image=None, max_tokens=450):
                     "data": data,
                 }
             })
-        r = requests.post(
-            f"{GEMINI_API}/{model}:generateContent",
-            timeout=90,
-            headers={"x-goog-api-key": key, "Content-Type": "application/json"},
-            json={
-                "systemInstruction": {"parts": [{"text": system}]},
-                "contents": [{"role": "user", "parts": parts}],
-                "generationConfig": {
-                    "temperature": 0.2,
-                    "maxOutputTokens": max_tokens,
-                },
-            },
-        )
+        config = {"maxOutputTokens": max(max_tokens, 800)}
+        if model.startswith(("gemini-3", "gemini-4")):
+            # gemini-3.8-flash thinks at medium by default, which is far too slow
+            # for short farm answers, and thoughts count against maxOutputTokens.
+            config["thinkingConfig"] = {
+                "thinkingLevel": (os.getenv("GEMINI_THINKING") or "low").strip() or "low"
+            }
+        body = {
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": parts}],
+            "generationConfig": config,
+        }
+        url = f"{GEMINI_API}/{model}:generateContent"
+        try:
+            r = requests.post(
+                url,
+                timeout=45,
+                headers={"x-goog-api-key": key, "Content-Type": "application/json"},
+                json=body,
+            )
+        except requests.Timeout:
+            raise RuntimeError(
+                f"AI timed out after 45 seconds on {model}. "
+                "The free AI tier is busy right now; please try again in a minute."
+            )
         if not r.ok:
             try:
                 detail = r.json()["error"]["message"]
@@ -222,6 +234,7 @@ def _ai_reply(system, user_text, image=None, max_tokens=450):
             text = "".join(
                 part.get("text", "")
                 for part in r.json()["candidates"][0]["content"]["parts"]
+                if not part.get("thought")
             )
         except (KeyError, IndexError, TypeError):
             text = ""
@@ -730,6 +743,7 @@ def health():
         "ai_on": bool(ai_settings()[0]),
         "ai_provider": ai_settings()[2],
         "ai_model": ai_settings()[1],
+        "ai_thinking": (os.getenv("GEMINI_THINKING") or "low").strip() or "low",
         "layers": ["_250m_16_days_NDVI", "_250m_16_days_EVI"],
         "product": PRODUCT,
     }
